@@ -76,6 +76,14 @@ static struct compressor zstd_comp_ops = {
 extern struct compressor zstd_comp_ops;
 #endif
 
+#ifndef BROTLI_SUPPORT
+static struct compressor brotli_comp_ops = {
+	BROTLI_COMPRESSION, "brotli"
+};
+#else
+extern struct compressor brotli_comp_ops;
+#endif
+
 static struct compressor unknown_comp_ops = {
 	0, "unknown"
 };
@@ -88,6 +96,7 @@ struct compressor *compressor[] = {
 	&xz_comp_ops,
 	&zstd_comp_ops,
 	&lzma_comp_ops,
+	&brotli_comp_ops,
 	&unknown_comp_ops
 };
 

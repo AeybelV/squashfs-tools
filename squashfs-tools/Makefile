@@ -87,6 +87,17 @@ LZ4_SUPPORT = 1
 ZSTD_SUPPORT = 1
 
 
+########### Building Brotli support #############
+#
+# Google's Brotli library is supported
+# Brotli homepage: https://brotli.org/
+# Brotli source repository: https://github.com/google/brotli
+#
+# To build install and uncomment
+# the BROTLI_SUPPORT line below.
+#
+BROTLI_SUPPORT = 1
+
 ######## Specifying default compression ########
 #
 # The next line specifies which compression algorithm is used by default
@@ -197,6 +208,7 @@ XZ_SUPPORT ?= 0
 LZO_SUPPORT ?= 0
 LZ4_SUPPORT ?= 0
 ZSTD_SUPPORT ?= 0
+BROTLI_SUPPORT ?= 0
 COMP_DEFAULT ?= gzip
 XATTR_SUPPORT ?= 1
 XATTR_OS_SUPPORT ?= 1
@@ -323,6 +335,18 @@ ifeq ($(COMP_DEFAULT),lzma)
 COMPRESSORS += lzma@(default)
 else
 COMPRESSORS += lzma
+endif
+endif
+
+ifeq ($(BROTLI_SUPPORT),1)
+CFLAGS += -DBROTLI_SUPPORT
+MKSQUASHFS_OBJS += brotli_wrapper.o
+UNSQUASHFS_OBJS += brotli_wrapper.o
+# LIBS += -llzma
+ifeq ($(COMP_DEFAULT),brotli)
+COMPRESSORS += brotli@(default)
+else
+COMPRESSORS += brotli
 endif
 endif
 
@@ -488,6 +512,8 @@ lz4_wrapper.o: lz4_wrapper.c squashfs_fs.h lz4_wrapper.h compressor.h
 xz_wrapper.o: xz_wrapper.c squashfs_fs.h xz_wrapper.h compressor.h
 
 xz_wrapper_extended.o: xz_wrapper_extended.c squashfs_fs.h xz_wrapper.h compressor.h
+
+brotli_wrapper.o: brotli_wrapper.c squashfs_fs.h brotli_wrapper.h compressor.h
 
 mksquashfs_help.o: mksquashfs_help.h Makefile
 
