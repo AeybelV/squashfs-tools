@@ -1,27 +1,44 @@
+
+/*
+ * Squashfs - Brotli Support
+ *
+ * Copyright (c) 2024
+ * Aeybel Varghese <aeybelvarghese@gmail.com>
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2,
+ * or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+ *
+ * brotli_wrapper.h
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <zlib.h>
 
 #include "compressor.h"
-#include "gzip_wrapper.h"
+#include "brotli_wrapper.h"
 #include "print_pager.h"
 #include "squashfs_fs.h"
 
-static struct strategy strategy[] = {{"default", Z_DEFAULT_STRATEGY, 0},
-                                     {"filtered", Z_FILTERED, 0},
-                                     {"huffman_only", Z_HUFFMAN_ONLY, 0},
-                                     {"run_length_encoded", Z_RLE, 0},
-                                     {"fixed", Z_FIXED, 0},
-                                     {NULL, 0, 0}};
-
-static int strategy_count = 0;
 
 /* default compression level */
-static int compression_level = GZIP_DEFAULT_COMPRESSION_LEVEL;
+static int compression_level = BROTLI_DEFAULT_COMPRESSION_LEVEL;
 
 /* default window size */
-static int window_size = GZIP_DEFAULT_WINDOW_SIZE;
+// TODO: Window size - Implement as configurable option
+/* static int window_size = BROTLI_DEFAULT_WINDOW_SIZE; */
 
 /*
  * This function is called by the options parsing code in mksquashfs.c
@@ -41,75 +58,45 @@ static int window_size = GZIP_DEFAULT_WINDOW_SIZE;
 static int brotli_options(char *argv[], int argc) {
   if (strcmp(argv[0], "-Xcompression-level") == 0) {
     if (argc < 2) {
-      fprintf(stderr, "gzip: -Xcompression-level missing "
+      fprintf(stderr, "brotli: -Xcompression-level missing "
                       "compression level\n");
-      fprintf(stderr, "gzip: -Xcompression-level it "
-                      "should be 1 >= n <= 9\n");
+      fprintf(stderr, "brotli: -Xcompression-level it "
+                      "should be 0 >= n <= 11\n");
       goto failed;
     }
 
     compression_level = atoi(argv[1]);
-    if (compression_level < 1 || compression_level > 9) {
-      fprintf(stderr, "gzip: -Xcompression-level invalid, it "
-                      "should be 1 >= n <= 9\n");
+    if (compression_level < BROTLI_COMPRESSION_MIN || compression_level > BROTLI_COMPRESSION_MAX) {
+      fprintf(stderr, "brotli: -Xcompression-level invalid, it "
+                      "should be 0 >= n <= 11\n"); // TODO: Dont have the compression level limits hardcoded in string?
       goto failed;
-    }
-
-    return 1;
-  } else if (strcmp(argv[0], "-Xwindow-size") == 0) {
-    if (argc < 2) {
-      fprintf(stderr, "gzip: -Xwindow-size missing window "
-                      "	size\n");
-      fprintf(stderr, "gzip: -Xwindow-size <window-size>\n");
-      goto failed;
-    }
-
-    window_size = atoi(argv[1]);
-    if (window_size < 8 || window_size > 15) {
-      fprintf(stderr, "gzip: -Xwindow-size invalid, it "
-                      "should be 8 >= n <= 15\n");
-      goto failed;
-    }
-
-    return 1;
-  } else if (strcmp(argv[0], "-Xstrategy") == 0) {
-    char *name;
-    int i;
-
-    if (argc < 2) {
-      fprintf(stderr, "gzip: -Xstrategy missing "
-                      "strategies\n");
-      goto failed;
-    }
-
-    name = argv[1];
-    while (name[0] != '\0') {
-      for (i = 0; strategy[i].name; i++) {
-        int n = strlen(strategy[i].name);
-        if ((strncmp(name, strategy[i].name, n) == 0) &&
-            (name[n] == '\0' || name[n] == ',')) {
-          if (strategy[i].selected == 0) {
-            strategy[i].selected = 1;
-            strategy_count++;
-          }
-          name += name[n] == ',' ? n + 1 : n;
-          break;
-        }
-      }
-      if (strategy[i].name == NULL) {
-        fprintf(stderr, "gzip: -Xstrategy unrecognised "
-                        "strategy\n");
-        goto failed;
-      }
     }
 
     return 1;
   }
 
-  return -1;
+  // TODO: Window size - Implement as configurable option
+
+  /* else if (strcmp(argv[0], "-Xwindow-size") == 0) { */
+  /*   if (argc < 2) { */
+  /*     fprintf(stderr, "gzip: -Xwindow-size missing window " */
+  /*                     "	size\n"); */
+  /*     fprintf(stderr, "gzip: -Xwindow-size <window-size>\n"); */
+  /*     goto failed; */
+  /*   } */
+  /**/
+  /*   window_size = atoi(argv[1]); */
+  /*   if (window_size < 8 || window_size > 15) { */
+  /*     fprintf(stderr, "gzip: -Xwindow-size invalid, it " */
+  /*                     "should be 8 >= n <= 15\n"); */
+  /*     goto failed; */
+  /*   } */
+  /**/
+  /*   return 1; */
+  /* } */
 
 failed:
-  return -2;
+    return -1;
 }
 
 /*
@@ -121,10 +108,6 @@ failed:
  *			-1 on error
  */
 static int brotli_options_post(int block_size) {
-  if (strategy_count == 1 && strategy[0].selected) {
-    strategy_count = 0;
-    strategy[0].selected = 0;
-  }
 
   return 0;
 }
@@ -141,27 +124,12 @@ static int brotli_options_post(int block_size) {
  *
  */
 static void *brotli_dump_options(int block_size, int *size) {
-  static struct gzip_comp_opts comp_opts;
-  int i, strategies = 0;
+  static struct brotli_comp_opts comp_opts;
 
-  /*
-   * If default compression options of:
-   * compression-level: 8 and
-   * window-size: 15 and
-   * strategy_count == 0 then
-   * don't store a compression options structure (this is compatible
-   * with the legacy implementation of GZIP for Squashfs)
-   */
-  if (compression_level == GZIP_DEFAULT_COMPRESSION_LEVEL &&
-      window_size == GZIP_DEFAULT_WINDOW_SIZE && strategy_count == 0)
+  if (compression_level == BROTLI_DEFAULT_COMPRESSION_LEVEL)
     return NULL;
 
-  for (i = 0; strategy[i].name; i++)
-    strategies |= strategy[i].selected << i;
-
   comp_opts.compression_level = compression_level;
-  comp_opts.window_size = window_size;
-  comp_opts.strategy = strategies;
 
   SQUASHFS_INSWAP_COMP_OPTS(&comp_opts);
 
@@ -190,59 +158,49 @@ static void *brotli_dump_options(int block_size, int *size) {
  *			-1 on error
  */
 static int brotli_extract_options(int block_size, void *buffer, int size) {
-  struct gzip_comp_opts *comp_opts = buffer;
-  int i;
+  struct brotli_comp_opts *comp_opts = buffer;
 
   if (size == 0) {
     /* Set default values */
-    compression_level = GZIP_DEFAULT_COMPRESSION_LEVEL;
-    window_size = GZIP_DEFAULT_WINDOW_SIZE;
-    strategy_count = 0;
+    compression_level = BROTLI_DEFAULT_COMPRESSION_LEVEL;
+    // TODO: Window size - Implement as configurable option
+    /* window_size = GZIP_DEFAULT_WINDOW_SIZE; */
     return 0;
   }
-
-  /* we expect a comp_opts structure of sufficient size to be present */
+  
+  // Sanity checks to verify the comp_opts struct is present
   if (size < sizeof(*comp_opts))
     goto failed;
 
   SQUASHFS_INSWAP_COMP_OPTS(comp_opts);
 
   /* Check comp_opts structure for correctness */
-  if (comp_opts->compression_level < 1 || comp_opts->compression_level > 9) {
-    fprintf(stderr, "gzip: bad compression level in "
+  if (comp_opts->compression_level < BROTLI_COMPRESSION_MIN || comp_opts->compression_level > BROTLI_COMPRESSION_MAX) {
+    fprintf(stderr, "brotli: bad compression level in "
                     "compression options structure\n");
     goto failed;
   }
   compression_level = comp_opts->compression_level;
 
-  if (comp_opts->window_size < 8 || comp_opts->window_size > 15) {
-    fprintf(stderr, "gzip: bad window size in "
-                    "compression options structure\n");
-    goto failed;
-  }
-  window_size = comp_opts->window_size;
-
-  strategy_count = 0;
-  for (i = 0; strategy[i].name; i++) {
-    if ((comp_opts->strategy >> i) & 1) {
-      strategy[i].selected = 1;
-      strategy_count++;
-    } else
-      strategy[i].selected = 0;
-  }
+  /* // TODO: Window size - Implement as configurable option */
+  /* if (comp_opts->window_size < BROTLI_WINDOW_MIN || comp_opts->window_size > BROTLI_WINDOW_MAX) { */
+  /*   fprintf(stderr, "brotli: bad window size in " */
+  /*                   "compression options structure\n"); */
+  /*   goto failed; */
+  /* } */
+  /* window_size = comp_opts->window_size; */
 
   return 0;
 
 failed:
-  fprintf(stderr, "gzip: error reading stored compressor options from "
+  fprintf(stderr, "brotli: error reading stored compressor options from "
                   "filesystem!\n");
 
   return -1;
 }
 
 static void brotli_display_options(void *buffer, int size) {
-  struct gzip_comp_opts *comp_opts = buffer;
-  int i, printed;
+  struct brotli_comp_opts *comp_opts = buffer;
 
   /* we expect a comp_opts structure of sufficient size to be present */
   if (size < sizeof(*comp_opts))
@@ -251,40 +209,25 @@ static void brotli_display_options(void *buffer, int size) {
   SQUASHFS_INSWAP_COMP_OPTS(comp_opts);
 
   /* Check comp_opts structure for correctness */
-  if (comp_opts->compression_level < 1 || comp_opts->compression_level > 9) {
-    fprintf(stderr, "gzip: bad compression level in "
+  if (comp_opts->compression_level < BROTLI_COMPRESSION_MIN || comp_opts->compression_level > BROTLI_COMPRESSION_MAX) {
+    fprintf(stderr, "brotli: bad compression level in "
                     "compression options structure\n");
     goto failed;
   }
   printf("\tcompression-level %d\n", comp_opts->compression_level);
 
-  if (comp_opts->window_size < 8 || comp_opts->window_size > 15) {
-    fprintf(stderr, "gzip: bad window size in "
-                    "compression options structure\n");
-    goto failed;
-  }
-  printf("\twindow-size %d\n", comp_opts->window_size);
-
-  for (i = 0, printed = 0; strategy[i].name; i++) {
-    if ((comp_opts->strategy >> i) & 1) {
-      if (printed)
-        printf(", ");
-      else
-        printf("\tStrategies selected: ");
-      printf("%s", strategy[i].name);
-      printed = 1;
-    }
-  }
-
-  if (!printed)
-    printf("\tStrategies selected: default\n");
-  else
-    printf("\n");
+  /* // TODO: Window size - Implement as configurable option */
+  /* if (comp_opts->window_size < BROTLI_WINDOW_MIN || comp_opts->window_size > BROTLI_WINDOW_MAX) { */
+  /*   fprintf(stderr, "brotli: bad window size in " */
+  /*                   "compression options structure\n"); */
+  /*   goto failed; */
+  /* } */
+  /* printf("\twindow-size %d\n", comp_opts->window_size); */
 
   return;
 
 failed:
-  fprintf(stderr, "gzip: error reading stored compressor options from "
+  fprintf(stderr, "brotli: error reading stored compressor options from "
                   "filesystem!\n");
 }
 
@@ -296,159 +239,35 @@ failed:
  *			-1 on error
  */
 static int brotli_init(void **strm, int block_size, int datablock) {
-  int i, j, res;
-  struct gzip_stream *stream;
-
-  if (!datablock || !strategy_count) {
-    stream = malloc(sizeof(*stream) + sizeof(struct gzip_strategy));
-    if (stream == NULL)
-      goto failed;
-
-    stream->strategies = 1;
-    stream->strategy[0].strategy = Z_DEFAULT_STRATEGY;
-  } else {
-    stream =
-        malloc(sizeof(*stream) + sizeof(struct gzip_strategy) * strategy_count);
-    if (stream == NULL)
-      goto failed;
-
-    memset(stream->strategy, 0, sizeof(struct gzip_strategy) * strategy_count);
-
-    stream->strategies = strategy_count;
-
-    for (i = 0, j = 0; strategy[i].name; i++) {
-      if (!strategy[i].selected)
-        continue;
-
-      stream->strategy[j].strategy = strategy[i].strategy;
-      if (j) {
-        stream->strategy[j].buffer = malloc(block_size);
-        if (stream->strategy[j].buffer == NULL)
-          goto failed2;
-      }
-      j++;
-    }
-  }
-
-  stream->stream.zalloc = Z_NULL;
-  stream->stream.zfree = Z_NULL;
-  stream->stream.opaque = 0;
-
-  res = deflateInit2(&stream->stream, compression_level, Z_DEFLATED,
-                     window_size, 8, stream->strategy[0].strategy);
-  if (res != Z_OK)
-    goto failed2;
-
-  *strm = stream;
-  return 0;
-
-failed2:
-  for (i = 1; i < stream->strategies; i++)
-    free(stream->strategy[i].buffer);
-  free(stream);
-failed:
-  return -1;
+  return 0; 
 }
 
 static int brotli_compress(void *strm, void *d, void *s, int size,
                            int block_size, int *error) {
-  int i, res;
-  struct gzip_stream *stream = strm;
-  struct gzip_strategy *selected = NULL;
-
-  stream->strategy[0].buffer = d;
-
-  for (i = 0; i < stream->strategies; i++) {
-    struct gzip_strategy *strategy = &stream->strategy[i];
-
-    res = deflateReset(&stream->stream);
-    if (res != Z_OK)
-      goto failed;
-
-    stream->stream.next_in = s;
-    stream->stream.avail_in = size;
-    stream->stream.next_out = strategy->buffer;
-    stream->stream.avail_out = block_size;
-
-    if (stream->strategies > 1) {
-      res =
-          deflateParams(&stream->stream, compression_level, strategy->strategy);
-      if (res != Z_OK)
-        goto failed;
-    }
-
-    stream->stream.total_out = 0;
-    res = deflate(&stream->stream, Z_FINISH);
-    strategy->length = stream->stream.total_out;
-    if (res == Z_STREAM_END) {
-      if (!selected || selected->length > strategy->length)
-        selected = strategy;
-    } else if (res != Z_OK)
-      goto failed;
-  }
-
-  if (!selected)
-    /*
-     * Output buffer overflow.  Return out of buffer space
-     */
-    return 0;
-
-  if (selected->buffer != d)
-    memcpy(d, selected->buffer, selected->length);
-
-  return (int)selected->length;
-
-failed:
-  /*
-   * All other errors return failure, with the compressor
-   * specific error code in *error
-   */
-  *error = res;
-  return -1;
+  return 0;  
 }
 
 static int brotli_uncompress(void *d, void *s, int size, int outsize,
                              int *error) {
-  int res;
-  unsigned long bytes = outsize;
-
-  res = uncompress(d, &bytes, s, size);
-
-  if (res == Z_OK)
-    return (int)bytes;
-  else {
-    *error = res;
-    return -1;
-  }
+  return 0;
 }
 
 static void brotli_usage(FILE *stream, int cols) {
   autowrap_print(stream, "\t  -Xcompression-level <compression-level>\n", cols);
   autowrap_printf(stream, cols,
-                  "\t\t<compression-level> should be 1 .. "
-                  "9 (default %d)\n",
-                  GZIP_DEFAULT_COMPRESSION_LEVEL);
-  autowrap_print(stream, "\t  -Xwindow-size <window-size>\n", cols);
-  autowrap_printf(stream, cols,
-                  "\t\t<window-size> should be 8 .. 15 "
-                  "(default %d)\n",
-                  GZIP_DEFAULT_WINDOW_SIZE);
-  autowrap_print(stream,
-                 "\t  -Xstrategy strategy1,strategy2,...,"
-                 "strategyN\n",
-                 cols);
-  autowrap_print(
-      stream,
-      "\t\tCompress using strategy1,strategy2,...,"
-      "strategyN in turn and choose the best compression.  Available "
-      "strategies: default, filtered, huffman_only, "
-      "run_length_encoded and fixed\n",
-      cols);
+                  "\t\t<compression-level> should be 0 .. "
+                  "11 (default %d)\n",
+                  BROTLI_DEFAULT_COMPRESSION_LEVEL);
+  // TODO: Window size - Implement as configurable option */
+  /* autowrap_print(stream, "\t  -Xwindow-size <window-size>\n", cols); */
+  /* autowrap_printf(stream, cols, */
+  /*                 "\t\t<window-size> should be 8 .. 15 " */
+  /*                 "(default %d)\n", */
+  /*                 BROTLI_DEFAULT_WINDOW_SIZE); */
 }
 
 static int option_args(char *option) {
-  if (strcmp(option, "-Xcompression-level") == 0 ||
-      strcmp(option, "-Xwindow-size") == 0 || strcmp(option, "-Xstrategy") == 0)
+  if (strcmp(option, "-Xcompression-level") == 0) 
     return 1;
 
   return 0;
@@ -464,6 +283,6 @@ struct compressor brotli_comp_ops = {.init = brotli_init,
                                      .display_options = brotli_display_options,
                                      .usage = brotli_usage,
                                      .option_args = option_args,
-                                     .id = ZLIB_COMPRESSION,
+                                     .id = BROTLI_COMPRESSION,
                                      .name = "brotli",
                                      .supported = 1};
