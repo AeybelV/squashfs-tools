@@ -342,7 +342,7 @@ ifeq ($(BROTLI_SUPPORT),1)
 CFLAGS += -DBROTLI_SUPPORT
 MKSQUASHFS_OBJS += brotli_wrapper.o
 UNSQUASHFS_OBJS += brotli_wrapper.o
-# LIBS += -llzma
+LIBS += -lbrotlicommon -lbrotlienc -lbrotlidec
 ifeq ($(COMP_DEFAULT),brotli)
 COMPRESSORS += brotli@(default)
 else

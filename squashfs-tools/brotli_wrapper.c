@@ -26,11 +26,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <brotli/encode.h>
+#include <brotli/decode.h>
 
 #include "compressor.h"
 #include "brotli_wrapper.h"
 #include "print_pager.h"
 #include "squashfs_fs.h"
+
 
 
 /* default compression level */
@@ -125,9 +128,6 @@ static int brotli_options_post(int block_size) {
  */
 static void *brotli_dump_options(int block_size, int *size) {
   static struct brotli_comp_opts comp_opts;
-
-  if (compression_level == BROTLI_DEFAULT_COMPRESSION_LEVEL)
-    return NULL;
 
   comp_opts.compression_level = compression_level;
 
@@ -239,12 +239,30 @@ failed:
  *			-1 on error
  */
 static int brotli_init(void **strm, int block_size, int datablock) {
-  return 0; 
+  // TODO: Maybe do something here? 
+  return 0; // Return 0 to indicate success
 }
 
-static int brotli_compress(void *strm, void *d, void *s, int size,
-                           int block_size, int *error) {
-  return 0;  
+static int brotli_compress(void *strm, void *d, void *s, int size, int block_size, int *error){
+  // TODO: Handle block_size
+  
+  size_t max_compressed_size = BrotliEncoderMaxCompressedSize(size);
+
+  /* // TODO: Window size - Implement as configurable option */
+  BROTLI_BOOL res = BrotliEncoderCompress(compression_level,    // Compression level (0-11)
+                  BROTLI_DEFAULT_WINDOW,     // Window size
+                  BROTLI_MODE_GENERIC,
+                  size,
+                  s,
+                  &max_compressed_size,
+                  d);
+  if(!res){
+    *error = res;
+    fprintf(stderr, "brotli: compression failed.\n");
+    return -1;
+  }
+
+  return (int) max_compressed_size;
 }
 
 static int brotli_uncompress(void *d, void *s, int size, int outsize,
